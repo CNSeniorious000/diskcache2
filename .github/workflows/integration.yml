@@ -1,52 +1,74 @@
-name: integration
+name: CI
 
 on: [push, pull_request]
 
 jobs:
 
   checks:
-    runs-on: ubuntu-latest
     strategy:
-      max-parallel: 8
       matrix:
-        check: [bluecheck, doc8, docs, flake8, isortcheck, mypy, pylint, rstcheck]
+        os: ["ubuntu", "macos", "windows"]
+        py: ["3.10", "3.11", "3.12", "pypy3.10"]
+    runs-on: ${{ matrix.os }}-latest
 
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
     - name: Set up Python
-      uses: actions/setup-python@v4
+      uses: actions/setup-python@v5
       with:
-        python-version: '3.11'
+        python-version: ${{ matrix.py }}
     - name: Install dependencies
       run: |
-        pip install --upgrade pip
-        pip install tox
-    - name: Run checks with tox
+        pip install --disable-pip-version-check --no-cache-dir uv
+        uv sync --group dev
+    - name: Run checks with ruff
       run: |
-        tox -e ${{ matrix.check }}
+        uv run ruff check
 
   tests:
-    needs: checks
-    runs-on: ${{ matrix.os }}
     strategy:
-      max-parallel: 8
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
-        python-version: [3.8, 3.9, '3.10', 3.11]
+        os: ["ubuntu", "macos", "windows"]
+        py: ["3.10", "3.11", "3.12", "pypy3.10"]
+    runs-on: ${{ matrix.os }}-latest
 
     steps:
-    - name: Set up Python ${{ matrix.python-version }} x64
-      uses: actions/setup-python@v4
+    - name: Set up Python
+      uses: actions/setup-python@v5
       with:
-        python-version: ${{ matrix.python-version }}
-        architecture: x64
+        python-version: ${{ matrix.py }}
 
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
 
-    - name: Install tox
+    - name: Install dependencies
       run: |
-        pip install --upgrade pip
-        pip install tox
+        pip install --disable-pip-version-check --no-cache-dir uv
+        uv sync --group test
 
-    - name: Test with tox
-      run: tox -e py
+    - name: Test with pytest
+      run: |
+        uv run pytest
+
+  publish:
+    needs: [checks, tests]
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: 3.13
+
+    - name: Build the package
+      run: |
+        pip install --disable-pip-version-check --no-cache-dir uv
+        uv build
+
+    - name: Publish to PyPI
+      continue-on-error: true
+      run: |
+        uv publish

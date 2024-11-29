@@ -11,7 +11,7 @@ import time
 from unittest import mock
 
 from django.conf import settings
-from django.core.cache import CacheKeyWarning, cache, caches
+from django.core.cache import CacheKeyWarning, InvalidCacheBackendError, cache, caches
 from django.http import HttpResponse
 from django.middleware.cache import (
     FetchFromCacheMiddleware,
@@ -30,7 +30,7 @@ import django
 
 django.setup()
 
-from .models import Poll, expensive_calculation
+from .models import Poll, expensive_calculation  # noqa: E402
 
 
 # functions/classes for complex data type tests

@@ -19,3 +19,11 @@
 
 # macOS metadata
 .DS_Store
+
+# lock files
+*.lock
+
+# IDE configuration
+.vscode
+.fleet
+.idea
