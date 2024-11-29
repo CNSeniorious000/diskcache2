@@ -250,7 +250,7 @@ class DjangoCache(BaseCache):
         try:
             return self._cache.incr(key, delta, default, retry)
         except KeyError:
-            raise ValueError("Key '%s' not found" % key) from None
+            raise ValueError(f"Key '{key}' not found") from None
 
     def decr(self, key, delta=1, version=None, default=None, retry=True):
         """Decrement value by delta for item with key.

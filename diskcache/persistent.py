@@ -614,7 +614,7 @@ class Deque(Sequence):
         """
         if not isinstance(steps, int):
             type_name = type(steps).__name__
-            raise TypeError('integer argument expected, got %s' % type_name)
+            raise TypeError(f'integer argument expected, got {type_name}')
 
         len_self = len(self)
 
@@ -1125,8 +1125,8 @@ class Index(MutableMapping):
             beta = ((key, other[key]) for key in other)
             pairs = zip(alpha, beta)
             return not any(a != x or b != y for (a, b), (x, y) in pairs)
-        else:
-            return all(self[key] == other.get(key, ENOVAL) for key in self)
+
+        return all(self[key] == other.get(key, ENOVAL) for key in self)
 
     def __ne__(self, other):
         """index.__ne__(other) <==> index != other

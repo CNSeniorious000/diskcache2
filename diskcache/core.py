@@ -22,7 +22,7 @@ import zlib
 
 def full_name(func):
     """Return full name of `func` by adding the module and function name."""
-    return func.__module__ + '.' + func.__qualname__
+    return f'{func.__module__}.{func.__qualname__}'
 
 
 class Constant(tuple):
@@ -32,7 +32,7 @@ class Constant(tuple):
         return tuple.__new__(cls, (name,))
 
     def __repr__(self):
-        return '%s' % self[0]
+        return f'{self[0]}'
 
 
 DBNAME = 'cache.db'
@@ -202,10 +202,9 @@ class Disk:
         elif type_value is bytes:
             if len(value) < min_file_size:
                 return 0, MODE_RAW, None, sqlite3.Binary(value)
-            else:
-                filename, full_path = self.filename(key, value)
-                self._write(full_path, io.BytesIO(value), 'xb')
-                return len(value), MODE_BINARY, filename, None
+            filename, full_path = self.filename(key, value)
+            self._write(full_path, io.BytesIO(value), 'xb')
+            return len(value), MODE_BINARY, filename, None
         elif type_value is str:
             filename, full_path = self.filename(key, value)
             self._write(full_path, io.StringIO(value), 'x', 'UTF-8')
@@ -222,10 +221,9 @@ class Disk:
 
             if len(result) < min_file_size:
                 return 0, MODE_PICKLE, None, sqlite3.Binary(result)
-            else:
-                filename, full_path = self.filename(key, value)
-                self._write(full_path, io.BytesIO(result), 'xb')
-                return len(result), MODE_PICKLE, filename, None
+            filename, full_path = self.filename(key, value)
+            self._write(full_path, io.BytesIO(result), 'xb')
+            return len(result), MODE_PICKLE, filename, None
 
     def _write(self, full_path, iterator, mode, encoding=None):
         full_dir, _ = op.split(full_path)
@@ -269,19 +267,17 @@ class Disk:
         elif mode == MODE_BINARY:
             if read:
                 return open(op.join(self._directory, filename), 'rb')
-            else:
-                with open(op.join(self._directory, filename), 'rb') as reader:
-                    return reader.read()
+            with open(op.join(self._directory, filename), 'rb') as reader:
+                return reader.read()
         elif mode == MODE_TEXT:
             full_path = op.join(self._directory, filename)
             with open(full_path, 'r', encoding='UTF-8') as reader:
                 return reader.read()
         elif mode == MODE_PICKLE:
-            if value is None:
-                with open(op.join(self._directory, filename), 'rb') as reader:
-                    return pickle.load(reader)
-            else:
+            if value is not None:
                 return pickle.load(io.BytesIO(value))
+            with open(op.join(self._directory, filename), 'rb') as reader:
+                return pickle.load(reader)
 
     def filename(self, key=UNKNOWN, value=UNKNOWN):
         """Return filename and full-path tuple for file storage.
@@ -304,7 +300,7 @@ class Disk:
         # pylint: disable=unused-argument
         hex_name = codecs.encode(os.urandom(16), 'hex').decode('utf-8')
         sub_dir = op.join(hex_name[:2], hex_name[2:4])
-        name = hex_name[4:] + '.val'
+        name = f'{hex_name[4:]}.val'
         filename = op.join(sub_dir, name)
         full_path = op.join(self._directory, filename)
         return filename, full_path
@@ -437,8 +433,8 @@ class Cache:
         directory = op.expanduser(directory)
         directory = op.expandvars(directory)
 
-        self._directory = directory
         self._timeout = 0  # Manually handle retries during initialization.
+        self._directory = directory
         self._local = threading.local()
         self._txn_id = None
 
@@ -449,8 +445,7 @@ class Cache:
                 if error.errno != errno.EEXIST:
                     raise EnvironmentError(
                         error.errno,
-                        'Cache directory "%s" does not exist'
-                        ' and could not be created' % self._directory,
+                        f'Cache directory "{self._directory}" does not exist and could not be created',
                     ) from None
 
         sql = self._sql_retry
@@ -794,13 +789,10 @@ class Cache:
         # need cleanup.
 
         with self._transact(retry, filename) as (sql, cleanup):
-            rows = sql(
-                'SELECT rowid, filename FROM Cache'
-                ' WHERE key = ? AND raw = ?',
+            if rows := sql(
+                'SELECT rowid, filename FROM Cache' ' WHERE key = ? AND raw = ?',
                 (db_key, raw),
-            ).fetchall()
-
-            if rows:
+            ).fetchall():
                 ((rowid, old_filename),) = rows
                 cleanup(old_filename)
                 self._row_update(rowid, now, columns)
@@ -889,12 +881,8 @@ class Cache:
         )
 
         select_expired = select_expired_template % 'filename'
-        rows = sql(select_expired, (now, cull_limit)).fetchall()
-
-        if rows:
-            delete_expired = 'DELETE FROM Cache WHERE rowid IN (%s)' % (
-                select_expired_template % 'rowid'
-            )
+        if rows := sql(select_expired, (now, cull_limit)).fetchall():
+            delete_expired = f"DELETE FROM Cache WHERE rowid IN ({select_expired_template % 'rowid'})"
             sql(delete_expired, (now, cull_limit))
 
             for (filename,) in rows:
@@ -913,9 +901,7 @@ class Cache:
             return
 
         select_filename = select_policy.format(fields='filename', now=now)
-        rows = sql(select_filename, (cull_limit,)).fetchall()
-
-        if rows:
+        if rows := sql(select_filename, (cull_limit,)).fetchall():
             delete = 'DELETE FROM Cache WHERE rowid IN (%s)' % (
                 select_policy.format(fields='rowid', now=now)
             )
@@ -943,13 +929,11 @@ class Cache:
         expire_time = None if expire is None else now + expire
 
         with self._transact(retry) as (sql, _):
-            rows = sql(
+            if rows := sql(
                 'SELECT rowid, expire_time FROM Cache'
                 ' WHERE key = ? AND raw = ?',
                 (db_key, raw),
-            ).fetchall()
-
-            if rows:
+            ).fetchall():
                 ((rowid, old_expire_time),) = rows
 
                 if old_expire_time is None or old_expire_time > now:
@@ -993,13 +977,11 @@ class Cache:
         columns = (expire_time, tag, size, mode, filename, db_value)
 
         with self._transact(retry, filename) as (sql, cleanup):
-            rows = sql(
+            if rows := sql(
                 'SELECT rowid, filename, expire_time FROM Cache'
                 ' WHERE key = ? AND raw = ?',
                 (db_key, raw),
-            ).fetchall()
-
-            if rows:
+            ).fetchall():
                 ((rowid, old_filename, old_expire_time),) = rows
 
                 if old_expire_time is None or old_expire_time > now:
@@ -1083,9 +1065,9 @@ class Cache:
             update_column = EVICTION_POLICY[self.eviction_policy]['get']
 
             if update_column is not None:
-                columns += ', ' + update_column.format(now=now)
+                columns += f', {update_column.format(now=now)}'
 
-            update = 'UPDATE Cache SET %s WHERE rowid = ?' % columns
+            update = f'UPDATE Cache SET {columns} WHERE rowid = ?'
             sql(update, (now, value, rowid))
 
             return value
@@ -1207,9 +1189,9 @@ class Cache:
                     sql(cache_hit)
 
                 now = time.time()
-                update = 'UPDATE Cache SET %s WHERE rowid = ?'
-
                 if update_column is not None:
+                    update = 'UPDATE Cache SET %s WHERE rowid = ?'
+
                     sql(update % update_column.format(now=now), (rowid,))
 
         if expire_time and tag:
@@ -1440,32 +1422,22 @@ class Cache:
             min_key = 0
             max_key = 999999999999999
         else:
-            min_key = prefix + '-000000000000000'
-            max_key = prefix + '-999999999999999'
+            min_key = f'{prefix}-000000000000000'
+            max_key = f'{prefix}-999999999999999'
 
         now = time.time()
-        raw = True
         expire_time = None if expire is None else now + expire
         size, mode, filename, db_value = self._disk.store(value, read)
         columns = (expire_time, tag, size, mode, filename, db_value)
         order = {'back': 'DESC', 'front': 'ASC'}
-        select = (
-            'SELECT key FROM Cache'
-            ' WHERE ? < key AND key < ? AND raw = ?'
-            ' ORDER BY key %s LIMIT 1'
-        ) % order[side]
+        select = f'SELECT key FROM Cache WHERE ? < key AND key < ? AND raw = ? ORDER BY key {order[side]} LIMIT 1'
 
+        raw = True
         with self._transact(retry, filename) as (sql, cleanup):
-            rows = sql(select, (min_key, max_key, raw)).fetchall()
-
-            if rows:
+            if rows := sql(select, (min_key, max_key, raw)).fetchall():
                 ((key,),) = rows
 
-                if prefix is not None:
-                    num = int(key[(key.rfind('-') + 1) :])
-                else:
-                    num = key
-
+                num = int(key[(key.rfind('-') + 1) :]) if prefix is not None else key
                 if side == 'back':
                     num += 1
                 else:
@@ -1474,11 +1446,7 @@ class Cache:
             else:
                 num = 500000000000000
 
-            if prefix is not None:
-                db_key = '{0}-{1:015d}'.format(prefix, num)
-            else:
-                db_key = num
-
+            db_key = '{0}-{1:015d}'.format(prefix, num) if prefix is not None else num
             self._row_insert(db_key, raw, now, columns)
             self._cull(now, sql, cleanup)
 
@@ -1550,8 +1518,8 @@ class Cache:
             min_key = 0
             max_key = 999999999999999
         else:
-            min_key = prefix + '-000000000000000'
-            max_key = prefix + '-999999999999999'
+            min_key = f'{prefix}-000000000000000'
+            max_key = f'{prefix}-999999999999999'
 
         order = {'front': 'ASC', 'back': 'DESC'}
         select = (
@@ -1665,8 +1633,8 @@ class Cache:
             min_key = 0
             max_key = 999999999999999
         else:
-            min_key = prefix + '-000000000000000'
-            max_key = prefix + '-999999999999999'
+            min_key = f'{prefix}-000000000000000'
+            max_key = f'{prefix}-999999999999999'
 
         order = {'front': 'ASC', 'back': 'DESC'}
         select = (
@@ -1692,12 +1660,11 @@ class Cache:
                         (rowid, key, db_expire, db_tag, mode, name, db_value),
                     ) = rows
 
-                    if db_expire is not None and db_expire < time.time():
-                        sql('DELETE FROM Cache WHERE rowid = ?', (rowid,))
-                        cleanup(name)
-                    else:
+                    if db_expire is None or db_expire >= time.time():
                         break
 
+                    sql('DELETE FROM Cache WHERE rowid = ?', (rowid,))
+                    cleanup(name)
             try:
                 value = self._disk.fetch(mode, name, db_value, False)
             except IOError:
@@ -1955,7 +1922,7 @@ class Cache:
 
                         continue
 
-                    warnings.warn('file not found: %s' % full_path)
+                    warnings.warn(f'file not found: {full_path}')
 
                     if fix:
                         sql('DELETE FROM Cache WHERE rowid = ?', (rowid,))
@@ -1970,7 +1937,7 @@ class Cache:
                         if DBNAME in full_path:
                             continue
 
-                        message = 'unknown file: %s' % full_path
+                        message = f'unknown file: {full_path}'
                         warnings.warn(message, UnknownFileWarning)
 
                         if fix:
@@ -1980,7 +1947,7 @@ class Cache:
 
                 for dirpath, dirs, files in os.walk(self._directory):
                     if not (dirs or files):
-                        message = 'empty directory: %s' % dirpath
+                        message = f'empty directory: {dirpath}'
                         warnings.warn(message, EmptyDirWarning)
 
                         if fix:
@@ -2245,9 +2212,7 @@ class Cache:
                 ' ORDER BY key ASC, raw ASC LIMIT ?'
             )
 
-        row = sql(select).fetchall()
-
-        if row:
+        if row := sql(select).fetchall():
             ((key, raw),) = row
         else:
             return
@@ -2272,22 +2237,14 @@ class Cache:
         if max_rowid is None:
             return
 
-        bound = max_rowid + 1
         limit = 100
         _disk_get = self._disk.get
+        bound = max_rowid + 1
         rowid = 0 if ascending else bound
-        select = (
-            'SELECT rowid, key, raw FROM Cache'
-            ' WHERE ? < rowid AND rowid < ?'
-            ' ORDER BY rowid %s LIMIT ?'
-        ) % ('ASC' if ascending else 'DESC')
+        select = f"SELECT rowid, key, raw FROM Cache WHERE ? < rowid AND rowid < ? ORDER BY rowid {'ASC' if ascending else 'DESC'} LIMIT ?"
 
         while True:
-            if ascending:
-                args = (rowid, bound, limit)
-            else:
-                args = (0, rowid, limit)
-
+            args = (rowid, bound, limit) if ascending else (0, rowid, limit)
             rows = sql(select, args).fetchall()
 
             if not rows:
@@ -2334,8 +2291,7 @@ class Cache:
 
         """
         ((page_count,),) = self._sql('PRAGMA page_count').fetchall()
-        total_size = self._page_size * page_count + self.reset('size')
-        return total_size
+        return self._page_size * page_count + self.reset('size')
 
     def close(self):
         """Close database connection."""
@@ -2431,14 +2387,12 @@ class Cache:
             while True:
                 try:
                     try:
-                        ((old_value,),) = sql(
-                            'PRAGMA %s' % (pragma)
-                        ).fetchall()
+                        ((old_value,),) = sql(f'PRAGMA {pragma}').fetchall()
                         update = old_value != value
                     except ValueError:
                         update = True
                     if update:
-                        sql('PRAGMA %s = %s' % (pragma, value)).fetchall()
+                        sql(f'PRAGMA {pragma} = {value}').fetchall()
                     break
                 except sqlite3.OperationalError as exc:
                     if str(exc) != 'database is locked':

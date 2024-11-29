@@ -148,7 +148,7 @@ class RLock:
         """Acquire lock by incrementing count using spin-lock algorithm."""
         pid = os.getpid()
         tid = threading.get_ident()
-        pid_tid = '{}-{}'.format(pid, tid)
+        pid_tid = f'{pid}-{tid}'
 
         while True:
             with self._cache.transact(retry=True):
@@ -167,7 +167,7 @@ class RLock:
         """Release lock by decrementing count."""
         pid = os.getpid()
         tid = threading.get_ident()
-        pid_tid = '{}-{}'.format(pid, tid)
+        pid_tid = f'{pid}-{tid}'
 
         with self._cache.transact(retry=True):
             value, count = self._cache.get(self._key, default=(None, 0))
