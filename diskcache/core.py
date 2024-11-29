@@ -420,7 +420,7 @@ T = TypeVar('T')
 class Cache(Generic[KT, VT]):
     """Disk and file backed cache."""
 
-    def __init__(self, directory: os.PathLike | None = None, timeout=60, disk=Disk, **settings):
+    def __init__(self, directory: str | os.PathLike[str] | None = None, timeout=60, disk=Disk, **settings):
         """Initialize cache instance.
 
         :param str directory: cache directory
