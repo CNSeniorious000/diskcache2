@@ -16,6 +16,7 @@ import struct
 import tempfile
 import threading
 import time
+from typing import Any, BinaryIO, Callable, Collection, Generator, Generic, Literal, ParamSpec, TypeVar, overload
 import warnings
 import zlib
 
@@ -103,7 +104,7 @@ EVICTION_POLICY = {
 class Disk:
     """Cache key and value serialization for SQLite database and files."""
 
-    def __init__(self, directory, min_file_size=0, pickle_protocol=0):
+    def __init__(self, directory: str, min_file_size=0, pickle_protocol=0):
         """Initialize disk instance.
 
         :param str directory: directory path
@@ -409,11 +410,17 @@ def args_to_key(base, args, kwargs, typed, ignore):
 
     return key
 
+KT = TypeVar('KT')  # key type
+VT = TypeVar('VT')  # value type
+FT = TypeVar('FT')  # fallback type
 
-class Cache:
+P = ParamSpec('P')
+T = TypeVar('T')
+
+class Cache(Generic[KT, VT]):
     """Disk and file backed cache."""
 
-    def __init__(self, directory=None, timeout=60, disk=Disk, **settings):
+    def __init__(self, directory: os.PathLike | None = None, timeout=60, disk=Disk, **settings):
         """Initialize cache instance.
 
         :param str directory: cache directory
@@ -741,7 +748,7 @@ class Cache:
                 if name is not None:
                     _disk_remove(name)
 
-    def set(self, key, value, expire=None, read=False, tag=None, retry=False):
+    def set(self, key: KT, value: VT, expire: float | None = None, read=False, tag: str | None = None, retry=False):
         """Set `key` and `value` item in cache.
 
         When `read` is `True`, `value` should be a file-like object opened
@@ -803,7 +810,7 @@ class Cache:
 
             return True
 
-    def __setitem__(self, key, value):
+    def __setitem__(self, key: KT, value: VT):
         """Set corresponding `value` for `key` in cache.
 
         :param key: key for item
@@ -910,7 +917,7 @@ class Cache:
             for (filename,) in rows:
                 cleanup(filename)
 
-    def touch(self, key, expire=None, retry=False):
+    def touch(self, key: KT, expire: float | None = None, retry=False):
         """Touch `key` in cache and update `expire` time.
 
         Raises :exc:`Timeout` error when database timeout occurs and `retry` is
@@ -945,7 +952,7 @@ class Cache:
 
         return False
 
-    def add(self, key, value, expire=None, read=False, tag=None, retry=False):
+    def add(self, key: KT, value: VT, expire: float | None = None, read=False, tag: str | None = None, retry=False):
         """Add `key` and `value` item to cache.
 
         Similar to `set`, but only add to cache if key not present.
@@ -997,7 +1004,7 @@ class Cache:
 
             return True
 
-    def incr(self, key, delta=1, default=0, retry=False):
+    def incr(self, key: KT, delta=1, default=0, retry=False):
         """Increment value by delta for item with key.
 
         If key is missing and default is None then raise KeyError. Else if key
@@ -1072,7 +1079,7 @@ class Cache:
 
             return value
 
-    def decr(self, key, delta=1, default=0, retry=False):
+    def decr(self, key: KT, delta=1, default=0, retry=False):
         """Decrement value by delta for item with key.
 
         If key is missing and default is None then raise KeyError. Else if key
@@ -1102,15 +1109,32 @@ class Cache:
         """
         return self.incr(key, -delta, default, retry)
 
+    @overload
+    def get(self, key: KT, default: VT | FT = None, read: Literal[False] = False, expire_time: Literal[False] = False, tag: Literal[False] = False, retry=False) -> VT | FT: ...
+    @overload
+    def get(self, key: KT, default: VT | FT = None, read: Literal[True] = True, expire_time: Literal[False] = False, tag: Literal[False] = False, retry=False) -> io.FileIO | FT: ...
+    @overload
+    def get(self, key: KT, default: VT | FT = None, read: Literal[False] = False, expire_time: Literal[True] = True, tag: Literal[False] = False, retry=False) -> tuple[VT | FT, float | None]: ...
+    @overload
+    def get(self, key: KT, default: VT | FT = None, read: Literal[True] = True, expire_time: Literal[True] = True, tag: Literal[False] = False, retry=False) -> tuple[io.FileIO | FT, float | None]: ...
+    @overload
+    def get(self, key: KT, default: VT | FT = None, read: Literal[False] = False, expire_time: Literal[False] = False, tag: Literal[True] = True, retry=False) -> tuple[VT | FT, str | None]: ...
+    @overload
+    def get(self, key: KT, default: VT | FT = None, read: Literal[True] = True, expire_time: Literal[False] = False, tag: Literal[True] = True, retry=False) -> tuple[io.FileIO | FT, str | None]: ...
+    @overload
+    def get(self, key: KT, default: VT | FT = None, read: Literal[False] = False, expire_time: Literal[True] = True, tag: Literal[True] = True, retry=False) -> tuple[VT | FT, float | None, str | None]: ...
+    @overload
+    def get(self, key: KT, default: VT | FT = None, read: Literal[True] = True, expire_time: Literal[True] = True, tag: Literal[True] = True, retry=False) -> tuple[io.FileIO | FT, float | None, str | None]: ...
+
     def get(
         self,
-        key,
-        default=None,
+        key: KT,
+        default: VT | FT | None = None,
         read=False,
         expire_time=False,
         tag=False,
         retry=False,
-    ):
+    ) -> VT | FT | io.FileIO | tuple[VT | FT | io.FileIO, float | None] | tuple[VT | FT | io.FileIO, str | None] | tuple[VT | FT | io.FileIO, float | None, str | None]:
         """Retrieve value from cache. If `key` is missing, return `default`.
 
         Raises :exc:`Timeout` error when database timeout occurs and `retry` is
@@ -1203,7 +1227,7 @@ class Cache:
         else:
             return value
 
-    def __getitem__(self, key):
+    def __getitem__(self, key: KT) -> VT:
         """Return corresponding value for `key` from cache.
 
         :param key: key matching item
@@ -1216,7 +1240,7 @@ class Cache:
             raise KeyError(key)
         return value
 
-    def read(self, key, retry=False):
+    def read(self, key: KT, retry=False) -> io.FileIO:
         """Return file handle value corresponding to `key` from cache.
 
         Raises :exc:`Timeout` error when database timeout occurs and `retry` is
@@ -1234,7 +1258,7 @@ class Cache:
             raise KeyError(key)
         return handle
 
-    def __contains__(self, key):
+    def __contains__(self, key: KT):
         """Return `True` if `key` matching item is found in cache.
 
         :param key: key matching item
@@ -1253,9 +1277,18 @@ class Cache:
 
         return bool(rows)
 
+    @overload
+    def pop(self, key: KT, default: FT = None, expire_time: Literal[False] = False, tag: Literal[False] = False, retry=False) -> VT | FT: ...
+    @overload
+    def pop(self, key: KT, default: FT = None, expire_time: Literal[True] = True, tag: Literal[False] = False, retry=False) -> tuple[VT | FT, float | None]: ...
+    @overload
+    def pop(self, key: KT, default: FT = None, expire_time: Literal[False] = False, tag: Literal[True] = True, retry=False) -> tuple[VT | FT, str | None]: ...
+    @overload
+    def pop(self, key: KT, default: FT = None, expire_time: Literal[True] = True, tag: Literal[True] = True, retry=False) -> tuple[VT | FT, float | None, str | None]: ...
+
     def pop(
-        self, key, default=None, expire_time=False, tag=False, retry=False
-    ):  # noqa: E501
+        self, key: KT, default: FT = None, expire_time=False, tag=False, retry=False
+    ) -> VT | FT | tuple[VT | FT, float | None] | tuple[VT | FT, str | None] | tuple[VT | FT, float | None, str | None]:  # noqa: E501
         """Remove corresponding item for `key` from cache and return value.
 
         If `key` is missing, return `default`.
@@ -1315,7 +1348,7 @@ class Cache:
         else:
             return value
 
-    def __delitem__(self, key, retry=True):
+    def __delitem__(self, key: KT, retry=True):
         """Delete corresponding item for `key` from cache.
 
         Raises :exc:`Timeout` error when database timeout occurs and `retry` is
@@ -1346,7 +1379,7 @@ class Cache:
 
             return True
 
-    def delete(self, key, retry=False):
+    def delete(self, key: KT, retry=False):
         """Delete corresponding item for `key` from cache.
 
         Missing keys are ignored.
@@ -1366,16 +1399,64 @@ class Cache:
         except KeyError:
             return False
 
+    @overload
     def push(
         self,
-        value,
-        prefix=None,
-        side='back',
-        expire=None,
-        read=False,
-        tag=None,
+        value: VT,
+        prefix: None = None,
+        side: Literal['back', 'front'] = 'back',
+        expire: float | None = None,
+        read: Literal[False] = False,
+        tag: str | None = None,
         retry=False,
-    ):
+    ) -> int: ...
+
+    @overload
+    def push(
+        self,
+        value: VT,
+        prefix: str,
+        side: Literal['back', 'front'] = 'back',
+        expire: float | None = None,
+        read: Literal[False] = False,
+        tag: str | None = None,
+        retry=False,
+    ) -> str: ...
+
+    @overload
+    def push(
+        self,
+        value: BinaryIO,
+        prefix: None = None,
+        side: Literal['back', 'front'] = 'back',
+        expire: float | None = None,
+        read: Literal[True] = True,
+        tag: str | None = None,
+        retry=False,
+    ) -> int: ...
+
+    @overload
+    def push(
+        self,
+        value: BinaryIO,
+        prefix: str,
+        side: Literal['back', 'front'] = 'back',
+        expire: float | None = None,
+        read: Literal[True] = True,
+        tag: str | None = None,
+        retry=False,
+    ) -> str: ...
+
+    def push(
+        self,
+        value: VT | BinaryIO,
+        prefix: str | None = None,
+        side: Literal['back', 'front'] = 'back',
+        expire: float | None = None,
+        read=False,
+        tag: str | None = None,
+        retry=False,
+    ) -> int | str:
         """Push `value` onto `side` of queue identified by `prefix` in cache.
 
         When prefix is None, integer keys are used. Otherwise, string keys are
@@ -1452,15 +1533,103 @@ class Cache:
 
             return db_key
 
+    @overload
     def pull(
         self,
-        prefix=None,
-        default=(None, None),
-        side='front',
+        prefix: None = None,
+        default: tuple[int, VT] | FT = (None, None),
+        side: Literal['front', 'back'] = 'front',
+        expire_time: Literal[False] = False,
+        tag: Literal[False] = False,
+        retry=False,
+    ) -> tuple[int, VT] | FT: ...
+
+    @overload
+    def pull(
+        self,
+        prefix: str,
+        default: tuple[str, VT] | FT = (None, None),
+        side: Literal['front', 'back'] = 'front',
+        expire_time: Literal[False] = False,
+        tag: Literal[False] = False,
+        retry=False,
+    ) -> tuple[str, VT] | FT: ...
+
+    @overload
+    def pull(
+        self,
+        prefix: None = None,
+        default: tuple[int, VT] | FT = (None, None),
+        side: Literal['front', 'back'] = 'front',
+        expire_time: Literal[True] = True,
+        tag: Literal[False] = False,
+        retry=False,
+    ) -> tuple[tuple[int, VT] | FT, float | None]: ...
+
+    @overload
+    def pull(
+        self,
+        prefix: str,
+        default: tuple[str, VT] | FT = (None, None),
+        side: Literal['front', 'back'] = 'front',
+        expire_time: Literal[True] = True,
+        tag: Literal[False] = False,
+        retry=False,
+    ) -> tuple[tuple[str, VT] | FT, float | None]: ...
+
+    @overload
+    def pull(
+        self,
+        prefix: None = None,
+        default: tuple[int, VT] | FT = (None, None),
+        side: Literal['front', 'back'] = 'front',
+        expire_time: Literal[False] = False,
+        tag: Literal[True] = True,
+        retry=False,
+    ) -> tuple[tuple[int, VT] | FT, str | None]: ...
+
+    @overload
+    def pull(
+        self,
+        prefix: str,
+        default: tuple[str, VT] | FT = (None, None),
+        side: Literal['front', 'back'] = 'front',
+        expire_time: Literal[False] = False,
+        tag: Literal[True] = True,
+        retry=False,
+    ) -> tuple[tuple[str, VT] | FT, str | None]: ...
+
+    @overload
+    def pull(
+        self,
+        prefix: None = None,
+        default: tuple[int, VT] | FT = (None, None),
+        side: Literal['front', 'back'] = 'front',
+        expire_time: Literal[True] = True,
+        tag: Literal[True] = True,
+        retry=False,
+    ) -> tuple[tuple[int, VT] | FT, float | None, str | None]: ...
+
+    @overload
+    def pull(
+        self,
+        prefix: str,
+        default: tuple[str, VT] | FT = (None, None),
+        side: Literal['front', 'back'] = 'front',
+        expire_time: Literal[True] = True,
+        tag: Literal[True] = True,
+        retry=False,
+    ) -> tuple[tuple[str, VT] | FT, float | None, str | None]: ...
+
+    def pull(
+        self,
+        prefix: str | None = None,
+        default: tuple[int | str, VT] | FT = (None, None),
+        side: Literal['front', 'back'] = 'front',
         expire_time=False,
         tag=False,
         retry=False,
-    ):
+    ) -> tuple[KT, VT] | FT | tuple[tuple[KT, VT] | FT, float | None] | tuple[tuple[KT, VT] | FT, str | None] | tuple[tuple[KT, VT] | FT, float | None, str | None]:
         """Pull key and value item pair from `side` of queue in cache.
 
         When prefix is None, integer keys are used. Otherwise, string keys are
@@ -1571,15 +1740,103 @@ class Cache:
         else:
             return key, value
 
+    @overload
     def peek(
         self,
-        prefix=None,
-        default=(None, None),
-        side='front',
+        prefix: None = None,
+        default: tuple[int, VT] | FT = (None, None),
+        side: Literal['front', 'back'] = 'front',
+        expire_time: Literal[False] = False,
+        tag: Literal[False] = False,
+        retry=False,
+    ) -> tuple[int, VT] | FT: ...
+
+    @overload
+    def peek(
+        self,
+        prefix: str,
+        default: tuple[str, VT] | FT = (None, None),
+        side: Literal['front', 'back'] = 'front',
+        expire_time: Literal[False] = False,
+        tag: Literal[False] = False,
+        retry=False,
+    ) -> tuple[str, VT] | FT: ...
+
+    @overload
+    def peek(
+        self,
+        prefix: None = None,
+        default: tuple[int, VT] | FT = (None, None),
+        side: Literal['front', 'back'] = 'front',
+        expire_time: Literal[True] = True,
+        tag: Literal[False] = False,
+        retry=False,
+    ) -> tuple[tuple[int, VT] | FT, float | None]: ...
+
+    @overload
+    def peek(
+        self,
+        prefix: str,
+        default: tuple[str, VT] | FT = (None, None),
+        side: Literal['front', 'back'] = 'front',
+        expire_time: Literal[True] = True,
+        tag: Literal[False] = False,
+        retry=False,
+    ) -> tuple[tuple[str, VT] | FT, float | None]: ...
+
+    @overload
+    def peek(
+        self,
+        prefix: None = None,
+        default: tuple[int, VT] | FT = (None, None),
+        side: Literal['front', 'back'] = 'front',
+        expire_time: Literal[False] = False,
+        tag: Literal[True] = True,
+        retry=False,
+    ) -> tuple[tuple[int, VT] | FT, str | None]: ...
+
+    @overload
+    def peek(
+        self,
+        prefix: str,
+        default: tuple[str, VT] | FT = (None, None),
+        side: Literal['front', 'back'] = 'front',
+        expire_time: Literal[False] = False,
+        tag: Literal[True] = True,
+        retry=False,
+    ) -> tuple[tuple[str, VT] | FT, str | None]: ...
+
+    @overload
+    def peek(
+        self,
+        prefix: None = None,
+        default: tuple[int, VT] | FT = (None, None),
+        side: Literal['front', 'back'] = 'front',
+        expire_time: Literal[True] = True,
+        tag: Literal[True] = True,
+        retry=False,
+    ) -> tuple[tuple[int, VT] | FT, float | None, str | None]: ...
+
+    @overload
+    def peek(
+        self,
+        prefix: str,
+        default: tuple[str, VT] | FT = (None, None),
+        side: Literal['front', 'back'] = 'front',
+        expire_time: Literal[True] = True,
+        tag: Literal[True] = True,
+        retry=False,
+    ) -> tuple[tuple[str, VT] | FT, float | None, str | None]: ...
+
+    def peek(
+        self,
+        prefix: str | None = None,
+        default: tuple[int | str, VT] | FT = (None, None),
+        side: Literal['front', 'back'] = 'front',
         expire_time=False,
         tag=False,
         retry=False,
-    ):
+    ) -> tuple[int | str, VT] | FT | tuple[tuple[int | str, VT] | FT, float | None] | tuple[tuple[int | str, VT] | FT, str | None] | tuple[tuple[int | str, VT] | FT, float | None, str | None]:
         """Peek at key and value item pair from `side` of queue in cache.
 
         When prefix is None, integer keys are used. Otherwise, string keys are
@@ -1681,6 +1938,15 @@ class Cache:
         else:
             return key, value
 
+    @overload
+    def peekitem(self, last=True, expire_time: Literal[False] = False, tag: Literal[False] = False, retry=False) -> tuple[KT, VT]: ...
+    @overload
+    def peekitem(self, last=True, expire_time: Literal[True] = True, tag: Literal[False] = False, retry=False) -> tuple[tuple[KT, VT], float | None]: ...
+    @overload
+    def peekitem(self, last=True, expire_time: Literal[False] = False, tag: Literal[True] = True, retry=False) -> tuple[tuple[KT, VT], str | None]: ...
+    @overload
+    def peekitem(self, last=True, expire_time: Literal[True] = True, tag: Literal[True] = True, retry=False) -> tuple[tuple[KT, VT], float | None, str | None]: ...
+
     def peekitem(self, last=True, expire_time=False, tag=False, retry=False):
         """Peek at key and value item pair in cache based on iteration order.
 
@@ -1760,7 +2026,7 @@ class Cache:
             return key, value
 
     def memoize(
-        self, name=None, typed=False, expire=None, tag=None, ignore=()
+        self, name: str | None = None, typed=False, expire: float | None = None, tag: str | None = None, ignore: Collection[int | str] = ()
     ):
         """Memoizing cache decorator.
 
@@ -1828,12 +2094,12 @@ class Cache:
         if callable(name):
             raise TypeError('name cannot be callable')
 
-        def decorator(func):
+        def decorator(func: Callable[P, T]):
             """Decorator created by memoize() for callable `func`."""
             base = (full_name(func),) if name is None else (name,)
 
             @ft.wraps(func)
-            def wrapper(*args, **kwargs):
+            def wrapper(*args: P.args, **kwargs: P.kwargs) -> T:
                 """Wrapper for callable to cache arguments and return values."""
                 key = wrapper.__cache_key__(*args, **kwargs)
                 result = self.get(key, default=ENOVAL, retry=True)
@@ -2011,7 +2277,7 @@ class Cache:
         sql('DROP INDEX IF EXISTS Cache_tag_rowid')
         self.reset('tag_index', 0)
 
-    def evict(self, tag, retry=False):
+    def evict(self, tag: str, retry=False):
         """Remove items with matching `tag` from cache.
 
         Removing items is an iterative process. In each iteration, a subset of
@@ -2038,7 +2304,7 @@ class Cache:
         args = [tag, 0, 100]
         return self._select_delete(select, args, arg_index=1, retry=retry)
 
-    def expire(self, now=None, retry=False):
+    def expire(self, now: float | None = None, retry=False):
         """Remove expired items from cache.
 
         Removing items is an iterative process. In each iteration, a subset of
@@ -2172,7 +2438,7 @@ class Cache:
 
         return count
 
-    def iterkeys(self, reverse=False):
+    def iterkeys(self, reverse=False) -> Generator[KT, Any, None]:
         """Iterate Cache keys in database sort order.
 
         >>> cache = Cache()
@@ -2228,7 +2494,7 @@ class Cache:
             for key, raw in rows:
                 yield _disk_get(key, raw)
 
-    def _iter(self, ascending=True):
+    def _iter(self, ascending=True) -> Generator[KT, Any, None]:
         sql = self._sql
         rows = sql('SELECT MAX(rowid) FROM Cache').fetchall()
         ((max_rowid,),) = rows
@@ -2265,7 +2531,7 @@ class Cache:
         next(iterator)
         return iterator
 
-    def stats(self, enable=True, reset=False):
+    def stats(self, enable=True, reset=False) -> tuple[int, int]:
         """Return cache statistics hits and misses.
 
         :param bool enable: enable collecting statistics (default True)
@@ -2284,7 +2550,7 @@ class Cache:
 
         return result
 
-    def volume(self):
+    def volume(self) -> int:
         """Return estimated total size of cache on disk.
 
         :return: size in bytes
@@ -2316,7 +2582,7 @@ class Cache:
     def __exit__(self, *exception):
         self.close()
 
-    def __len__(self):
+    def __len__(self) -> int:
         """Count of items in cache including expired items."""
         return self.reset('count')
 
@@ -2326,7 +2592,12 @@ class Cache:
     def __setstate__(self, state):
         self.__init__(*state)
 
-    def reset(self, key, value=ENOVAL, update=True):
+    @overload
+    def reset(self, key: str, value: T, update: bool = True) -> T: ...
+    @overload
+    def reset(self, key: str, value: Constant = ENOVAL, update: bool = True): ...
+
+    def reset(self, key: str, value: Any = ENOVAL, update=True) -> T | Any:
         """Reset `key` and `value` item from Settings table.
 
         Use `reset` to update the value of Cache settings correctly. Cache
