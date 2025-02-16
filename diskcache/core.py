@@ -1,6 +1,8 @@
 """Core disk and file backed cache API.
 """
 
+from __future__ import annotations
+
 import codecs
 import contextlib as cl
 import errno
@@ -16,9 +18,17 @@ import struct
 import tempfile
 import threading
 import time
-from typing import Any, BinaryIO, Callable, Collection, Generator, Generic, Literal, ParamSpec, TypeVar, overload
+from typing import TYPE_CHECKING, Any, BinaryIO, Callable, Collection, Generator, Generic, Literal, ParamSpec, TypeVar, TypedDict, overload
 import warnings
 import zlib
+
+if TYPE_CHECKING:
+    from sys import version_info
+
+    if version_info >= (3, 11):
+        from typing import Unpack
+    else:
+        from typing_extensions import Unpack
 
 
 def full_name(func):
@@ -46,7 +56,23 @@ MODE_BINARY = 2
 MODE_TEXT = 3
 MODE_PICKLE = 4
 
-DEFAULT_SETTINGS = {
+EvictionPolicy = Literal["none", "least-recently-stored", "least-recently-used", "least-frequently-used"]
+
+class Settings(TypedDict, total=False):
+    statistics: int
+    tag_index: int
+    eviction_policy: EvictionPolicy
+    size_limit: int
+    cull_limit: int
+    sqlite_auto_vacuum: int
+    sqlite_cache_size: int
+    sqlite_journal_mode: str
+    sqlite_mmap_size: int
+    sqlite_synchronous: int
+    disk_min_file_size: int
+    disk_pickle_protocol: int
+
+DEFAULT_SETTINGS: Settings = {
     'statistics': 0,  # False
     'tag_index': 0,  # False
     'eviction_policy': 'least-recently-stored',
@@ -68,7 +94,8 @@ METADATA = {
     'misses': 0,
 }
 
-EVICTION_POLICY = {
+
+EVICTION_POLICY: dict[EvictionPolicy, dict[Literal["init", "get", "cull"], Any]] = {
     'none': {
         'init': None,
         'get': None,
@@ -420,7 +447,7 @@ T = TypeVar('T')
 class Cache(Generic[KT, VT]):
     """Disk and file backed cache."""
 
-    def __init__(self, directory: str | os.PathLike[str] | None = None, timeout=60, disk=Disk, **settings):
+    def __init__(self, directory: str | os.PathLike[str] | None = None, timeout=60, disk=Disk, **settings: Unpack[Settings]):
         """Initialize cache instance.
 
         :param str directory: cache directory
