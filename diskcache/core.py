@@ -748,7 +748,12 @@ class Cache(Generic[KT, VT]):
                 if name is not None:
                     _disk_remove(name)
 
-    def set(self, key: KT, value: VT, expire: float | None = None, read=False, tag: str | None = None, retry=False):
+    @overload
+    def set(self, key: KT, value: VT, expire: float | None = None, read: Literal[False] = False, tag: str | None = None, retry=False) -> Literal[True]: ...
+    @overload
+    def set(self, key: KT, value: BinaryIO, expire: float | None = None, read: Literal[True] = True, tag: str | None = None, retry=False) -> Literal[True]: ...
+    
+    def set(self, key: KT, value: VT | BinaryIO, expire: float | None = None, read=False, tag: str | None = None, retry=False):
         """Set `key` and `value` item in cache.
 
         When `read` is `True`, `value` should be a file-like object opened
@@ -952,7 +957,12 @@ class Cache(Generic[KT, VT]):
 
         return False
 
-    def add(self, key: KT, value: VT, expire: float | None = None, read=False, tag: str | None = None, retry=False):
+    @overload
+    def add(self, key: KT, value: VT, expire: float | None = None, read: Literal[False] = False, tag: str | None = None, retry=False) -> bool: ...
+    @overload
+    def add(self, key: KT, value: BinaryIO, expire: float | None = None, read: Literal[True] = True, tag: str | None = None, retry=False) -> bool: ...
+
+    def add(self, key: KT, value: VT | BinaryIO, expire: float | None = None, read=False, tag: str | None = None, retry=False):
         """Add `key` and `value` item to cache.
 
         Similar to `set`, but only add to cache if key not present.
