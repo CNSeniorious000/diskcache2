@@ -1,7 +1,7 @@
 [project]
 name = "diskcache2"
 description = "Disk Cache -- Disk and file backed persistent cache."
-version = "0.1.2"
+version = "1.0.0"
 requires-python = "~=3.10"
 dependencies = []
 readme = "README.rst"
